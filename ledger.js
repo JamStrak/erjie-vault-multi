@@ -1,6 +1,8 @@
 export const STORAGE_KEY = 'erjie-vault-multi-ledger-v2';
 export const BOOK_VERSION = 2;
 export const PEOPLE = ['me', 'partner'];
+export const DEFAULT_BUSINESS_NAME = '我的小生意';
+const LEGACY_BUSINESS_NAME = '二姐杂货铺';
 
 export const ENTRY_LABELS = {
   deposit: '合伙人入金',
@@ -59,6 +61,31 @@ export function getPeople(book) {
   return peopleFromNames(book?.settings?.names);
 }
 
+function validBusinessName(value) {
+  return typeof value === 'string' && [...value.trim()].length >= 1 &&
+    [...value.trim()].length <= 24 && !/[\u0000-\u001f\u007f]/.test(value);
+}
+
+function assertCapitalShares(shares, people) {
+  if (shares === null) return;
+  if (!shares || typeof shares !== 'object' || Array.isArray(shares) ||
+      ![Object.prototype, null].includes(Object.getPrototypeOf(shares)) ||
+      Object.keys(shares).length !== people.length ||
+      people.some(person => !Object.hasOwn(shares, person) || !Number.isSafeInteger(shares[person]) || shares[person] < 1 || shares[person] > 10_000) ||
+      people.reduce((total, person) => total + shares[person], 0) !== 10_000) {
+    throw new Error('补资目标比例须包含所有合伙人，每人至少 0.01%，合计必须是 100%。');
+  }
+}
+
+export function contributionShares(book) {
+  const people = getPeople(book);
+  const shares = book.settings.capitalShares;
+  assertCapitalShares(shares, people);
+  if (shares !== null) return { ...shares };
+  const base = Math.floor(10_000 / people.length);
+  return Object.fromEntries(people.map((person, index) => [person, base + (index < 10_000 % people.length ? 1 : 0)]));
+}
+
 export function personHasHistory(book, person) {
   return book.entries.some(entry => entry.person === person || entry.source === person);
 }
@@ -72,6 +99,8 @@ export function emptyBook() {
     revision: 0,
     settings: {
       names: { me: '我', partner: '合伙人' },
+      businessName: DEFAULT_BUSINESS_NAME,
+      capitalShares: null,
       plannedPurchaseCents: 0,
       reserveCents: 0,
     },
@@ -284,6 +313,10 @@ export function normalizeLegacyFundingReviews(book) {
     }
   }
   next.version = BOOK_VERSION;
+  const businessNameChanged = next.settings.businessName === undefined;
+  if (businessNameChanged) next.settings.businessName = LEGACY_BUSINESS_NAME;
+  const capitalSharesChanged = next.settings.capitalShares === undefined;
+  if (capitalSharesChanged) next.settings.capitalShares = null;
   for (const entry of next.entries) assertEntry(entry, people);
   const cashByEntryId = historicalCashAtOutflows(next.entries);
   let fundingReviewsChanged = false;
@@ -297,7 +330,8 @@ export function normalizeLegacyFundingReviews(book) {
     }
   }
   assertBook(next);
-  return { book: next, changed: partnerStructureChanged || fundingReviewsChanged, partnerStructureChanged, fundingReviewsChanged, renamedLegacyPeople };
+  return { book: next, changed: partnerStructureChanged || fundingReviewsChanged || businessNameChanged || capitalSharesChanged,
+    partnerStructureChanged, fundingReviewsChanged, businessNameChanged, capitalSharesChanged, renamedLegacyPeople };
 }
 
 export function assertBook(book) {
@@ -309,6 +343,8 @@ export function assertBook(book) {
   }
   if (!book.settings || typeof book.settings !== 'object' || !book.settings.names) throw new Error('账本设置不完整。');
   const people = getPeople(book);
+  if (!validBusinessName(book.settings.businessName)) throw new Error('生意名称须为 1 至 24 个字，不能换行。');
+  assertCapitalShares(book.settings.capitalShares, people);
   const cashSources = ['treasury', ...people];
   const purchaseSources = [...cashSources, 'supplier_credit'];
   if (!nonnegativeCents(book.settings.plannedPurchaseCents) || !nonnegativeCents(book.settings.reserveCents)) {
@@ -639,8 +675,13 @@ export function summarize(entries, people = PEOPLE) {
 export function fundingPlan(book) {
   const people = getPeople(book);
   const totals = summarize(book.entries, people);
+  const shareBps = contributionShares(book);
+  const customShares = book.settings.capitalShares !== null;
   const highestCapitalCents = people.reduce((highest, person) => Math.max(highest, totals.capitalCents[person]), 0);
-  const equalizeByPersonCents = Object.fromEntries(people.map(person => [person, highestCapitalCents - totals.capitalCents[person]]));
+  const capitalTarget = Object.fromEntries(people.map(person => [person, customShares
+    ? Math.max(...people.map(funded => Math.ceil(totals.capitalCents[funded] * shareBps[person] / shareBps[funded])))
+    : highestCapitalCents]));
+  const equalizeByPersonCents = Object.fromEntries(people.map(person => [person, capitalTarget[person] - totals.capitalCents[person]]));
   const peopleToEqualize = people.filter(person => equalizeByPersonCents[person] > 0);
   const lower = peopleToEqualize.length === 1 ? peopleToEqualize[0] : null;
   const equalizeCents = sumByPerson(equalizeByPersonCents, people);
@@ -652,7 +693,16 @@ export function fundingPlan(book) {
   const suggestedTransferCents = Math.min(receivableTotalCents, cashGapCents);
   const afterTransferGapCents = Math.max(0, cashGapCents - suggestedTransferCents);
   const afterEqualizeGapCents = Math.max(0, targetCents - totals.cashCents - suggestedTransferCents - equalizeCents);
-  const sharedTopUpCents = Math.ceil(afterEqualizeGapCents / people.length);
+  const sharedTopUpCents = customShares ? null : Math.ceil(afterEqualizeGapCents / people.length);
+  const additionalByPersonCents = customShares
+    ? Object.fromEntries(people.map(person => [person, Math.floor(afterEqualizeGapCents * shareBps[person] / 10_000)]))
+    : Object.fromEntries(people.map(person => [person, sharedTopUpCents]));
+  if (customShares) {
+    const remainder = afterEqualizeGapCents - sumByPerson(additionalByPersonCents, people);
+    const order = people.map((person, index) => ({ person, index, remainder: afterEqualizeGapCents * shareBps[person] % 10_000 }))
+      .sort((a, b) => b.remainder - a.remainder || a.index - b.index);
+    for (const { person } of order.slice(0, remainder)) additionalByPersonCents[person]++;
+  }
   return {
     targetCents,
     payableTotalCents,
@@ -663,9 +713,12 @@ export function fundingPlan(book) {
     afterTransferGapCents,
     equalizeCents,
     equalizeByPersonCents,
+    shareBps,
+    shareMode: customShares ? 'custom' : 'equal',
+    additionalByPersonCents,
     lower,
     sharedTopUpCents,
-    dueCents: Object.fromEntries(people.map(person => [person, sharedTopUpCents + equalizeByPersonCents[person]])),
+    dueCents: Object.fromEntries(people.map(person => [person, additionalByPersonCents[person] + equalizeByPersonCents[person]])),
   };
 }
 
@@ -755,10 +808,15 @@ export function voidEntry(book, id) {
 export function updateSettings(book, settings) {
   const next = structuredClone(book);
   next.settings = { ...next.settings, ...settings };
+  if (settings.businessName !== undefined && typeof settings.businessName === 'string') next.settings.businessName = settings.businessName.trim();
   if (settings.names !== undefined) {
     // A submitted dictionary is the complete roster, not a partial name patch.
     next.settings.names = structuredClone(settings.names);
     const nextPeople = getPeople(next);
+    const rosterChanged = nextPeople.length !== getPeople(book).length || nextPeople.some(person => !getPeople(book).includes(person));
+    if (rosterChanged && book.settings.capitalShares !== null && settings.capitalShares === undefined) {
+      throw new Error('人数变化后，请先将补资目标比例改为均分，再保存合伙人名单。');
+    }
     for (const person of getPeople(book)) {
       if (!nextPeople.includes(person) && personHasHistory(book, person)) {
         throw new Error('已有记账历史的合伙人不能删除，可修改称呼；作废记录也需要保留归属。');

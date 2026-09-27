@@ -1,8 +1,8 @@
 {
   "id": "./",
-  "name": "二姐小金库 · 多人版",
-  "short_name": "小金库多人版",
-  "description": "可自定义合伙人数量的摊位账本",
+  "name": "合伙小金库 · 多人版",
+  "short_name": "合伙小金库",
+  "description": "可设置生意名称、合伙人及补资比例的经营账本",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

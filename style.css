@@ -1482,7 +1482,7 @@ html:not([data-theme="berry"]) { background: #e7ecdf; }
 .topbar { min-height: 66px; border-bottom-color: var(--line); }
 .brand-mark { flex-basis: 40px; width: 40px; height: 40px; border-radius: 13px; box-shadow: none; transform: none; }
 :root:not([data-theme="berry"]) .brand-mark { box-shadow: none; }
-.brand-lockup strong { font-size: 16px; letter-spacing: .02em; }
+.brand-lockup strong { font-size: 16px; letter-spacing: .02em; overflow-wrap: anywhere; }
 .brand-lockup small { margin-top: 1px; font-size: 12px; }
 .top-icon { border-color: var(--line); background: var(--paper); }
 .intro-row { padding: 13px 1px 11px; }
@@ -1798,6 +1798,22 @@ html:not([data-theme="berry"]) { background: #e7ecdf; }
 .settings-accordion > summary::after { font-size: 18px; }
 .settings-accordion > .settings-accordion-body,
 .settings-accordion > .reconciliation-body { margin: 0; padding: 0 15px 16px; }
+.settings-accordion #business-form .input-group { margin-top: 0; }
+.settings-accordion #business-form .primary-button { width: 100%; margin-top: 13px; }
+.share-editor { margin: 12px 0 16px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--cream); }
+.share-editor h3 { margin: 0; color: var(--ink-strong); font-size: 15px; }
+.share-editor > .field-help { margin-bottom: 12px; }
+.share-mode { display: flex; flex-wrap: wrap; gap: 8px; }
+.share-mode label { display: flex; align-items: center; gap: 7px; min-height: 42px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 11px; background: var(--paper); color: var(--ink); font-weight: 700; }
+.share-mode label:has(input:checked) { border-color: var(--berry); color: var(--berry-deep); background: var(--sage-light); }
+.share-mode input { width: 17px; height: 17px; margin: 0; accent-color: var(--berry); }
+#share-editor-fields { margin-top: 13px; }
+.share-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.share-row label { min-width: 0; overflow-wrap: anywhere; color: var(--ink-strong); font-weight: 700; }
+.share-row > div { display: flex; align-items: center; gap: 5px; flex: 0 0 104px; }
+.share-row input { width: 76px; min-height: 44px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink-strong); font-size: 16px; text-align: right; font-variant-numeric: tabular-nums; }
+#share-total { margin-top: 10px; font-weight: 700; }
+#share-total.is-invalid { color: var(--negative); }
 .settings-accordion .settings-form { box-shadow: none; }
 .settings-accordion .theme-help,
 .settings-accordion .theme-footnote { margin-bottom: 10px; color: var(--muted); font-size: 13px; }

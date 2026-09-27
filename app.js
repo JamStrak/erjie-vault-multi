@@ -1,5 +1,5 @@
 import {
-  STORAGE_KEY, ENTRY_LABELS, getPeople, personHasHistory, addEntries, assertBook, assertCurrentRevision, emptyBook, entryCashDelta,
+  STORAGE_KEY, ENTRY_LABELS, contributionShares, getPeople, personHasHistory, addEntries, assertBook, assertCurrentRevision, emptyBook, entryCashDelta,
   fundingCases, fundingPlan, money, newEntry, normalizeLegacyFundingReviews, parseNonnegativeYuan, parseYuan, resolveFunding, summarize,
   todayLocal, updateSettings, voidEntry,
 } from './ledger.js';
@@ -56,7 +56,7 @@ function showStorageError(error) {
   warning.hidden = false;
   warning.textContent = `暂时无法安全保存账本：${error.message}。请不要继续录入；可尝试关闭无痕浏览、释放手机空间，或从设置导入有效备份。`;
   $('#entry-submit').disabled = true;
-  $$('#settings-form button[type="submit"], #partners-form button').forEach(button => { button.disabled = true; });
+  $$('#settings-form button[type="submit"], #partners-form button, #business-form button').forEach(button => { button.disabled = true; });
 }
 
 function writeBook(next) {
@@ -71,7 +71,7 @@ function writeBook(next) {
   storageReady = true;
   $('#storage-warning').hidden = true;
   $('#entry-submit').disabled = false;
-  $$('#settings-form button[type="submit"], #partners-form button').forEach(button => { button.disabled = false; });
+  $$('#settings-form button[type="submit"], #partners-form button, #business-form button').forEach(button => { button.disabled = false; });
   render();
 }
 
@@ -91,7 +91,7 @@ function loadBook() {
     damagedStorageRaw = null;
     $('#storage-warning').hidden = true;
     $('#entry-submit').disabled = false;
-    $$('#settings-form button[type="submit"], #partners-form button').forEach(button => { button.disabled = false; });
+    $$('#settings-form button[type="submit"], #partners-form button, #business-form button').forEach(button => { button.disabled = false; });
     render();
     if (migration.fundingReviewsChanged) showToast('旧账本中有金库付款差额，已标记为待核实；请在首页逐笔确认');
   } catch (error) {
@@ -104,6 +104,8 @@ function loadBook() {
 
 function personName(person) { return book.settings.names[person] ?? person; }
 function people() { return getPeople(book); }
+function businessName() { return book.settings.businessName; }
+function safeFilename(value) { return value.replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, '_').replace(/[. ]+$/g, '') || '经营账本'; }
 function personTotal(amounts) { return people().reduce((sum, person) => sum + amounts[person], 0); }
 function sourceAmounts() { return Object.fromEntries(['treasury', ...people()].map(id => [id, 0])); }
 function escapeHtml(value) {
@@ -288,8 +290,8 @@ function renderHome(totals, plan) {
   $('#more-partners-label').textContent = `查看其余 ${Math.max(0, members.length - 4)} 位合伙人`;
   $('#more-partner-cards').innerHTML = members.slice(4).map(partnerCard).join('');
   $('#parity-note').textContent = plan.equalizeCents
-    ? `按 ${members.length} 人均等出资，补齐到当前最高净出资还需合计 ${money(plan.equalizeCents)}。入金或合伙人共同确认的垫付转出资后才会更新；待报销垫付不算正式出资。`
-    : members.length === 1 ? '当前由 1 人出资；待报销垫付仍单独显示。' : '目前各位合伙人的正式净出资相同；各自待报销垫付仍单独显示。';
+    ? `按${plan.shareMode === 'equal' ? '全员均等' : '约定比例'}补资，追平目前的正式净出资目标还需合计 ${money(plan.equalizeCents)}。只有实际入金或经合伙人确认转为出资后，记录才会改变。待报销垫付不算正式出资。`
+    : members.length === 1 ? '当前由 1 人出资；待报销垫付仍单独显示。' : `目前各位合伙人的正式净出资${plan.shareMode === 'equal' ? '相同' : '符合约定比例'}；待报销垫付仍单独显示。`;
 
   const needCash = plan.cashGapCents > 0;
   const status = $('#funding-status');
@@ -308,12 +310,14 @@ function renderHome(totals, plan) {
     const transferText = plan.suggestedTransferCents
       ? `当前现金差 ${money(plan.cashGapCents)}；先让代收的 ${money(plan.suggestedTransferCents)} 实际转入金库，转入后还差 ${money(plan.afterTransferGapCents)}。`
       : `当前金库还差 ${money(plan.cashGapCents)}。`;
-    $('#funding-explain').textContent = `${targetText}${transferText}下面按先转入代收款、再补齐均等出资计算。${needsReview ? '仍有付款待核实，确认来源后建议会更新。' : ''}`;
+    $('#funding-explain').textContent = `${targetText}${transferText}下面按先转入代收款、再按${plan.shareMode === 'equal' ? '均等' : '约定比例'}补资计算。${needsReview ? '仍有付款待核实，确认来源后建议会更新。' : ''}`;
   } else {
     $('#funding-explain').textContent = `当前金库账面余额可覆盖计划进货 ${money(planned)}、备用金 ${money(reserve)}${plan.payableTotalCents ? `及待报销 ${money(plan.payableTotalCents)}` : ''}${plan.supplierPayableCents ? `、欠供应商 ${money(plan.supplierPayableCents)}` : ''}，预计还剩 ${money(totals.cashCents - plan.targetCents)}。${plan.equalizeCents ? '各位合伙人的实际出资还未追平。' : '暂时不必为了这次计划再入金。'}${needsReview ? '仍有付款待核实，请逐笔确认。' : ''}`;
   }
-  $('#partner-funding').innerHTML = members.map(person => `<div><span>${escapeHtml(personName(person))}建议再存</span><strong>${money(plan.dueCents[person])}</strong></div>`).join('');
-  $('#funding-rule').textContent = `先把代收款转入金库，再让每人的正式净出资补齐到当前最高金额，仍有资金缺口则由 ${members.length} 人均分。金额按分向上取整，最多多留 ${Math.max(0, members.length - 1)} 分备用金。建议不会自动记成入金。`;
+  $('#partner-funding').innerHTML = members.map(person => `<div><span>${escapeHtml(personName(person))}建议再存${plan.shareMode === 'custom' ? ` · ${(plan.shareBps[person] / 100).toFixed(2)}%` : ''}</span><strong>${money(plan.dueCents[person])}</strong></div>`).join('');
+  $('#funding-rule').textContent = plan.shareMode === 'equal'
+    ? `先把代收款转入金库，再让每人的正式净出资补齐到当前最高金额，仍有资金缺口则由 ${members.length} 人均分。金额按分向上取整，最多多留 ${Math.max(0, members.length - 1)} 分备用金。建议不会自动记成入金。`
+    : '先把代收款转入金库，再让每人的正式净出资补齐到与现有投入相符的约定比例。剩余资金缺口按该比例分配，分位的尾差依比例补齐。建议不会自动记成入金，也不代表利润分配。';
   $('#plan-payable-total').textContent = money(plan.payableTotalCents);
   $('#plan-supplier-row').hidden = plan.supplierPayableCents <= 0;
   $('#plan-supplier-total').textContent = money(plan.supplierPayableCents);
@@ -389,7 +393,51 @@ function renderHistory(totals) {
 
 function renderPartnerEditor() {
   $('#partner-editor').innerHTML = people().map((person, index) => partnerEditorRow(person, personName(person), index)).join('');
+  $('#share-editor-rows').innerHTML = '';
+  $(`input[name="shareMode"][value="${book.settings.capitalShares === null ? 'equal' : 'custom'}"]`).checked = true;
   updatePartnerDraftCount();
+}
+
+function draftPeople() { return $$('#partner-editor .partner-editor-row').map(row => row.dataset.personId); }
+
+function draftEqualShares(ids) {
+  const whole = Math.floor(10_000 / ids.length);
+  return Object.fromEntries(ids.map((id, index) => [id, whole + (index < 10_000 % ids.length ? 1 : 0)]));
+}
+
+function parseShare(value) {
+  const input = value.trim();
+  if (!/^(?:0|[1-9]\d{0,2})(?:\.\d{1,2})?$/.test(input)) throw new Error('比例最多两位小数，每人至少 0.01%。');
+  const [whole, fraction = ''] = input.split('.');
+  const basisPoints = Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
+  if (basisPoints < 1 || basisPoints > 10_000) throw new Error('每人比例须在 0.01% 到 100% 之间。');
+  return basisPoints;
+}
+
+function updateShareTotal() {
+  const inputs = $$('#share-editor-rows [data-share-id]');
+  let total = 0;
+  let valid = true;
+  try {
+    for (const input of inputs) total += parseShare(input.value);
+    $('#share-total').textContent = `合计 ${(total / 100).toFixed(2)}%${total === 10_000 ? ' · 可以保存' : ' · 需为 100%'}`;
+  } catch { valid = false; $('#share-total').textContent = '请填每个人的百分比，最多两位小数，合计须为 100%。'; }
+  $('#share-total').classList.toggle('is-invalid', !valid || total !== 10_000);
+}
+
+function renderShareEditor() {
+  const custom = $('input[name="shareMode"]:checked').value === 'custom';
+  $('#share-editor-fields').hidden = !custom;
+  if (!custom) return;
+  const ids = draftPeople();
+  const prior = Object.fromEntries($$('#share-editor-rows [data-share-id]').map(input => [input.dataset.shareId, input.value]));
+  const saved = ids.length === people().length && ids.every((id, index) => id === people()[index])
+    ? contributionShares(book) : draftEqualShares(ids);
+  $('#share-editor-rows').innerHTML = ids.map(id => {
+    const name = $$('#partner-editor .partner-editor-row').find(row => row.dataset.personId === id).querySelector('input').value.trim() || '新合伙人';
+    return `<div class="share-row"><label for="share-${escapeHtml(id)}">${escapeHtml(name)}</label><div><input id="share-${escapeHtml(id)}" data-share-id="${escapeHtml(id)}" type="text" inputmode="decimal" value="${escapeHtml(prior[id] ?? (saved[id] / 100).toFixed(2))}" aria-label="${escapeHtml(name)}的补资目标比例"><span>%</span></div></div>`;
+  }).join('');
+  updateShareTotal();
 }
 
 function partnerEditorRow(person, name, index) {
@@ -399,12 +447,18 @@ function partnerEditorRow(person, name, index) {
 
 function updatePartnerDraftCount() {
   const rows = $$('#partner-editor .partner-editor-row');
-  $('#partner-draft-count').textContent = `${rows.length} 位 · 均等出资`;
+  const rosterChanged = rows.length !== people().length || rows.some((row, index) => row.dataset.personId !== people()[index]);
+  if (rosterChanged && $('input[name="shareMode"][value="custom"]').checked) {
+    $('input[name="shareMode"][value="equal"]').checked = true;
+    showToast('人数变动后先按均分计算；如需其他比例，再选择自定义');
+  }
+  $('#partner-draft-count').textContent = `${rows.length} 位 · ${$('input[name="shareMode"]:checked').value === 'custom' ? '自定义补资' : '均等补资'}`;
   rows.forEach((row, index) => {
     row.querySelector('label').textContent = `合伙人 ${index + 1}`;
     const remove = row.querySelector('[data-remove-person]');
     if (remove) { remove.disabled = rows.length <= 1; remove.setAttribute('aria-label', `移除合伙人 ${index + 1}`); }
   });
+  renderShareEditor();
 }
 
 function addPartnerField() {
@@ -420,7 +474,9 @@ function submitPartners(event) {
   if (!storageReady) return showToast('当前无法安全保存，请先恢复存储。');
   try {
     const names = Object.fromEntries($$('#partner-editor .partner-editor-row').map(row => [row.dataset.personId, row.querySelector('input').value.trim()]));
-    writeBook(updateSettings(book, { names }));
+    const capitalShares = $('input[name="shareMode"]:checked').value === 'custom'
+      ? Object.fromEntries($$('#share-editor-rows [data-share-id]').map(input => [input.dataset.shareId, parseShare(input.value)])) : null;
+    writeBook(updateSettings(book, { names, capitalShares }));
     $('#paired-confirm').checked = false;
     updateDepositMode();
     showToast(`已保存 ${people().length} 位合伙人`);
@@ -435,10 +491,12 @@ function fillSelect(id, options) {
 }
 
 function renderSettings() {
+  $('#business-name').value = businessName();
+  $('#business-settings-name').textContent = businessName();
   $('#planned-purchase').value = (book.settings.plannedPurchaseCents / 100).toFixed(2);
   $('#reserve-amount').value = (book.settings.reserveCents / 100).toFixed(2);
   renderPartnerEditor();
-  $('#partner-settings-count').textContent = `${people().length} 位 · 均等出资`;
+  $('#partner-settings-count').textContent = `${people().length} 位 · ${book.settings.capitalShares === null ? '均等补资' : '自定义补资'}`;
   $('#backup-date').textContent = book.lastBackupAt
     ? `上次发起完整备份：${new Date(book.lastBackupAt).toLocaleString('zh-CN')}（请到“文件”确认）`
     : '尚未导出完整备份';
@@ -508,13 +566,17 @@ function renderReview(totals) {
 }
 
 function render() {
+  $('#business-name-heading').textContent = businessName();
+  document.title = `${businessName()} · 合伙小金库`;
+  document.querySelector('meta[name="apple-mobile-web-app-title"]').content = [...businessName()].slice(0, 10).join('');
+  $('.brand-lockup').setAttribute('aria-label', `${businessName()}的合伙经营账本`);
   fundingCaseById = new Map(fundingCases(book.entries).map(item => [item.entry.id, item]));
   const totals = summarize(book.entries, people());
   renderHome(totals, fundingPlan(book));
   renderHistory(totals);
   renderSettings();
   renderReview(totals);
-  if (!storageReady) $$('#settings-form button[type="submit"], #partners-form button').forEach(button => { button.disabled = true; });
+  if (!storageReady) $$('#settings-form button[type="submit"], #partners-form button, #business-form button').forEach(button => { button.disabled = true; });
 }
 
 function setKind(kind) {
@@ -554,7 +616,7 @@ function setKind(kind) {
     deposit: '只记已经收到的钱；只给实际付款的合伙人记入金。',
     purchase: '按进货成本登记入库。金库账面不足也能先记下；之后逐笔核实是谁垫付或是否赊账。',
     sale: '销售款如果先进入个人收款码，请选“代收”。还需填这次卖掉的商品进价合计，才能算出经营盈亏。',
-    expense: '例如摊位物料、运费和包装；已知谁垫付就直接选择对应合伙人，不清楚的金库缺口可以稍后核实。',
+    expense: '例如经营物料、运费和包装；已知谁垫付就直接选择对应合伙人，不清楚的金库缺口可以稍后核实。',
     sale_cost: '先选对应销售，再填那次卖出的商品进价；日期会自动跟随原销售。真是零成本请明确填 0。',
     purchase_refund: '进货退款不算经营收入。普通退款按原付款去向退回；已支付的赊账退款要关联对应赊账。',
     stock_loss: '例如损坏、遗失或赠送，填该批商品原进货成本；库存减少，同时计入经营损失。',
@@ -725,6 +787,16 @@ function submitSettings(event) {
   } catch (error) { showToast(error.message); }
 }
 
+function submitBusiness(event) {
+  event.preventDefault();
+  if (!storageReady) return showToast('当前无法安全保存，请先恢复存储。');
+  try {
+    const next = updateSettings(book, { businessName: $('#business-name').value });
+    writeBook(next);
+    showToast(`已将这本账命名为「${businessName()}」`);
+  } catch (error) { showToast(error.message); }
+}
+
 function downloadBlob(filename, content, mime) {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -762,7 +834,7 @@ async function exportJson() {
   try {
     const next = { ...book, lastBackupAt: new Date().toISOString() };
     writeBook(next);
-    const result = await saveFile(`二姐小金库多人版_完整备份_${todayLocal()}.json`, JSON.stringify(book, null, 2), 'application/json');
+    const result = await saveFile(`${safeFilename(businessName())}_完整账本_${todayLocal()}.json`, JSON.stringify(book, null, 2), 'application/json');
     showToast(result === 'cancelled' ? '已取消分享；账本还没有完成备份' : '备份文件已交给系统，请在手机“文件”中确认保存');
   } catch (error) { showToast(`备份失败：${error.message}`); }
 }
@@ -795,10 +867,10 @@ async function exportCsv() {
   const rows = [...book.entries].sort(sortNewest);
   const supplementedCosts = new Map(book.entries.filter(entry => entry.kind === 'sale_cost' && !entry.voidedAt).map(entry => [entry.saleId, entry.amountCents]));
   const overview = [
-    ['二姐小金库 · 多人版账目摘要'],
+    [`${businessName()} · 经营账目摘要`],
     ['导出时间', exportedAt],
     ['累计经营盈亏（元）', totals.pendingCostCount ? `待核算：${totals.pendingCostCount} 笔销售未补成本` : (totals.profitCents / 100).toFixed(2)],
-    ['整摊回本差额（经营收入覆盖全部进货及费用，元）', (totals.recoveryCents / 100).toFixed(2)],
+    ['经营回本差额（经营收入覆盖全部进货及费用，元）', (totals.recoveryCents / 100).toFixed(2)],
     ['累计销售（元）', (totals.salesCents / 100).toFixed(2)],
     ['已售商品成本（元）', (totals.soldCostCents / 100).toFixed(2)],
     ['其他经营费用及报损（元）', ((totals.expensesCents + totals.stockLossCents) / 100).toFixed(2)],
@@ -810,7 +882,9 @@ async function exportCsv() {
     ['累计已确认透支（元）', (totals.confirmedOverdraftCents / 100).toFixed(2)],
     ['未售商品进货成本（元）', totals.pendingCostCount ? '待核算' : (totals.inventoryCents / 100).toFixed(2)],
     ['合伙人数', people().length],
+    ['补资目标方式', book.settings.capitalShares === null ? '全员均分' : '自定义比例'],
     ...people().flatMap(person => [
+      [`${personName(person)}补资目标比例`, `${(contributionShares(book)[person] / 100).toFixed(2)}%`],
       [`${personName(person)}正式净出资（元）`, (totals.capitalCents[person] / 100).toFixed(2)],
       [`${personName(person)}垫付待报销（元）`, (totals.payableCents[person] / 100).toFixed(2)],
       [`${personName(person)}出资及待报销合计（元）`, ((totals.capitalCents[person] + totals.payableCents[person]) / 100).toFixed(2)],
@@ -835,7 +909,7 @@ async function exportCsv() {
     entry.note, entry.voidedAt ? '已作废' : '有效', entry.createdAt, entry.voidedAt ?? '', entry.id,
   ])];
   try {
-    const result = await saveFile(`二姐小金库多人版_明细_${todayLocal()}.csv`, `\uFEFF${lines.map(row => row.map(csvCell).join(',')).join('\r\n')}`, 'text/csv');
+    const result = await saveFile(`${safeFilename(businessName())}_经营明细_${todayLocal()}.csv`, `\uFEFF${lines.map(row => row.map(csvCell).join(',')).join('\r\n')}`, 'text/csv');
     showToast(result === 'cancelled' ? '已取消分享明细表' : '明细表已交给系统；恢复账本请使用 JSON 完整备份');
   } catch (error) { showToast(`明细表导出失败：${error.message}`); }
 }
@@ -845,10 +919,10 @@ async function shareSummary() {
   const totals = summarize(book.entries, people());
   const profitText = totals.pendingCostCount ? `待核算（${totals.pendingCostCount} 笔销售未补成本）` : money(totals.profitCents);
   const inventoryText = totals.pendingCostCount ? '待核算' : money(totals.inventoryCents);
-  const partnerText = people().map(person => `${personName(person)}：正式出资 ${money(totals.capitalCents[person])}，垫付待报销 ${money(totals.payableCents[person])}，合计 ${money(totals.capitalCents[person] + totals.payableCents[person])}，代收待转入 ${money(totals.receivableCents[person])}`).join('\n');
-  const text = `二姐小金库 · 多人版 · ${todayLocal()}\n累计经营盈亏 ${profitText}\n整摊回本差额 ${money(totals.recoveryCents)}（经营收入覆盖全部净进货和费用；不代表出资已返还）\n累计销售 ${money(totals.salesCents)}｜已售商品成本 ${money(totals.soldCostCents)}\n金库账面余额 ${money(totals.cashCents)}｜未售商品成本 ${inventoryText}\n待核实付款 ${totals.pendingFundingCount} 笔，共 ${money(totals.pendingFundingCents)}｜欠供应商 ${money(totals.supplierPayableCents)}\n个人代收待转入 ${money(personTotal(totals.receivableCents))}\n合伙人 ${people().length} 位\n${partnerText}\n有效记录 ${totals.activeCount} 笔`;
+  const partnerText = people().map(person => `${personName(person)}（补资目标 ${(contributionShares(book)[person] / 100).toFixed(2)}%）：正式出资 ${money(totals.capitalCents[person])}，垫付待报销 ${money(totals.payableCents[person])}，合计 ${money(totals.capitalCents[person] + totals.payableCents[person])}，代收待转入 ${money(totals.receivableCents[person])}`).join('\n');
+  const text = `${businessName()} · 经营账摘要 · ${todayLocal()}\n累计经营盈亏 ${profitText}\n经营回本差额 ${money(totals.recoveryCents)}（经营收入覆盖全部净进货和费用；不代表出资已返还）\n累计销售 ${money(totals.salesCents)}｜已售商品成本 ${money(totals.soldCostCents)}\n金库账面余额 ${money(totals.cashCents)}｜未售商品成本 ${inventoryText}\n待核实付款 ${totals.pendingFundingCount} 笔，共 ${money(totals.pendingFundingCents)}｜欠供应商 ${money(totals.supplierPayableCents)}\n个人代收待转入 ${money(personTotal(totals.receivableCents))}\n合伙人 ${people().length} 位｜补资目标 ${book.settings.capitalShares === null ? '均分' : '自定义比例'}\n${partnerText}\n有效记录 ${totals.activeCount} 笔`;
   try {
-    if (navigator.share) await navigator.share({ title: '二姐小金库多人版经营账摘要', text });
+    if (navigator.share) await navigator.share({ title: `${businessName()}经营账摘要`, text });
     else if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(text);
       showToast('经营账摘要已复制，可以发给合伙人');
@@ -874,7 +948,7 @@ async function importJson(event) {
     const recoveryText = replacingDamagedBook
       ? '这会覆盖手机里无法读取的原数据。'
       : '继续前会在本机保留当前账本，可从设置撤销这次导入。仍建议另存完整 JSON 备份。';
-    const promptText = `将用所选备份替换本机账本：\n${currentText}\n导入：${getPeople(imported).length} 位合伙人，${imported.entries.length} 笔，最新录入 ${latestEntryTime(imported)}，金库余额 ${money(totals.cashCents)}\n${migration.fundingReviewsChanged ? '旧备份中的金库付款差额将标记为待核实，请导入后逐笔确认。\n' : ''}${migration.renamedLegacyPeople.length ? '旧备份中有同名称呼，已添加编号区分，历史归属不变。\n' : ''}${recoveryText}`;
+    const promptText = `将用所选备份替换本机账本：\n${currentText}\n导入：${imported.settings.businessName}，${getPeople(imported).length} 位合伙人，${imported.entries.length} 笔，最新录入 ${latestEntryTime(imported)}，金库余额 ${money(totals.cashCents)}\n${migration.fundingReviewsChanged ? '旧备份中的金库付款差额将标记为待核实，请导入后逐笔确认。\n' : ''}${migration.renamedLegacyPeople.length ? '旧备份中有同名称呼，已添加编号区分，历史归属不变。\n' : ''}${recoveryText}`;
     if (!window.confirm(promptText)) return;
     const latestRaw = localStorage.getItem(STORAGE_KEY);
     if (replacingDamagedBook) {
@@ -887,7 +961,7 @@ async function importJson(event) {
       damagedStorageRaw = null;
       $('#storage-warning').hidden = true;
       $('#entry-submit').disabled = false;
-      $$('#settings-form button[type="submit"], #partners-form button').forEach(button => { button.disabled = false; });
+      $$('#settings-form button[type="submit"], #partners-form button, #business-form button').forEach(button => { button.disabled = false; });
       render();
     } else {
       assertCurrentRevision(latestRaw ? assertBook(JSON.parse(latestRaw)) : emptyBook(), book);
@@ -938,7 +1012,7 @@ function bindEvents() {
     warning.hidden = false;
     warning.textContent = '账本已在另一个标签页更新。请刷新此页并核对最新余额，然后再继续录入；此页尚未保存的内容不会自动合并。';
     $('#entry-submit').disabled = true;
-    $$('#settings-form button[type="submit"], #partners-form button').forEach(button => { button.disabled = true; });
+    $$('#settings-form button[type="submit"], #partners-form button, #business-form button').forEach(button => { button.disabled = true; });
   });
   document.addEventListener('click', event => {
     const removePartner = event.target.closest('[data-remove-person]');
@@ -989,7 +1063,16 @@ function bindEvents() {
   $('#entry-form').addEventListener('submit', submitEntry);
   $('#review-form').addEventListener('submit', submitReview);
   $('#settings-form').addEventListener('submit', submitSettings);
+  $('#business-form').addEventListener('submit', submitBusiness);
   $('#partners-form').addEventListener('submit', submitPartners);
+  $$('input[name="shareMode"]').forEach(input => input.addEventListener('change', () => {
+    $('#partner-draft-count').textContent = `${draftPeople().length} 位 · ${input.value === 'custom' ? '自定义补资' : '均等补资'}`;
+    renderShareEditor();
+  }));
+  $('#share-editor-rows').addEventListener('input', updateShareTotal);
+  $('#partner-editor').addEventListener('input', event => {
+    if (event.target.matches('[data-partner-name]') && $('input[name="shareMode"][value="custom"]').checked) renderShareEditor();
+  });
   $('#add-partner').addEventListener('click', addPartnerField);
   $('#history-filter').addEventListener('change', () => renderHistory(summarize(book.entries, people())));
   $('#export-json').addEventListener('click', exportJson);

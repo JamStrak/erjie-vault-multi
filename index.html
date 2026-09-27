@@ -6,21 +6,21 @@
   <meta name="theme-color" content="#f8f4e8">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="小金库多人版">
-  <meta name="description" content="可自定义合伙人数的摊位账本，看清经营盈亏、库存、现金和每人的垫付。">
+  <meta name="apple-mobile-web-app-title" content="合伙小金库">
+  <meta name="description" content="可设置生意名称、合伙人和补资比例的经营账本。">
   <script>try { if (localStorage.getItem('erjie-vault-multi-theme-v1') === 'berry') { document.documentElement.dataset.theme = 'berry'; document.querySelector('meta[name="theme-color"]').content = '#fff5e5'; } } catch { /* Keep the jade default when storage is unavailable. */ }</script>
   <link id="favicon" rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icon.png">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="stylesheet" href="./style.css">
-  <title>二姐小金库 · 多人版</title>
+  <title>合伙小金库 · 多人版</title>
 </head>
 <body>
   <div class="app-shell">
     <header class="topbar">
-      <div class="brand-lockup" aria-label="二姐杂货铺小金库">
+      <div class="brand-lockup" aria-label="合伙经营账本">
         <span class="brand-mark" aria-hidden="true"><img id="brand-icon" src="./icon.svg" alt=""></span>
-        <span><strong>二姐杂货铺</strong><small>小金库 · 多人合伙版</small></span>
+        <span><strong id="business-name-heading">我的小生意</strong><small>合伙小金库 · 多人版</small></span>
       </div>
     </header>
 
@@ -35,7 +35,7 @@
 
         <article class="recovery-card" aria-labelledby="recovery-heading">
           <div class="recovery-top">
-            <div><span class="recovery-eyebrow">收入扣除全部进货与费用</span><h2 id="recovery-heading">整摊回本差额</h2></div>
+            <div><span class="recovery-eyebrow">收入扣除全部进货与费用</span><h2 id="recovery-heading">经营回本差额</h2></div>
             <span class="recovery-status" id="recovery-status">尚无流水</span>
           </div>
           <strong class="recovery-number" id="recovery-balance">¥0.00</strong>
@@ -153,14 +153,28 @@
 
       <section class="screen" id="screen-settings" aria-labelledby="settings-heading" hidden>
         <div class="page-lead compact-lead"><h1 id="settings-heading">设置</h1></div>
-        <details class="panel settings-accordion theme-panel" id="theme-settings"><summary><span>主题皮肤</span><small id="current-theme-label">桂花青玉</small></summary><div class="settings-accordion-body"><p class="theme-help">点选即切换，只改变这台设备的显示。</p><div class="theme-picker" role="group" aria-label="主题皮肤"><button class="theme-choice is-selected" type="button" data-theme-choice="jade" aria-pressed="true"><span class="theme-swatch jade" aria-hidden="true">✿</span><span class="theme-choice-copy"><strong class="theme-choice-title">桂花青玉 <em>默认</em></strong><small class="theme-choice-description">温润玉绿 · 桂花金</small></span><span class="theme-choice-check" aria-hidden="true">✓</span></button><button class="theme-choice" type="button" data-theme-choice="berry" aria-pressed="false"><span class="theme-swatch berry" aria-hidden="true">✿</span><span class="theme-choice-copy"><strong class="theme-choice-title">莓果红</strong><small class="theme-choice-description">原版的热闹与甜美</small></span><span class="theme-choice-check" aria-hidden="true">✓</span></button></div><p class="theme-footnote">皮肤保存在本机，不影响账目，也不包含在 JSON 备份中。</p></div></details>
+        <details class="panel settings-accordion" id="business-settings">
+          <summary><span>生意名称</span><small id="business-settings-name">我的小生意</small></summary>
+          <form id="business-form" class="settings-accordion-body" novalidate>
+            <div class="input-group"><label for="business-name">这本账叫什么？</label><input id="business-name" type="text" maxlength="24" placeholder="例如：春日手作店" autocomplete="organization" required></div>
+            <p class="field-help">名称会显示在首页、分享摘要和导出文件中，并保存在完整账本备份里。更名不会改动已有流水或金额。</p>
+            <button class="primary-button" type="submit">保存名称</button>
+          </form>
+        </details>
+        <details class="panel settings-accordion theme-panel" id="theme-settings"><summary><span>主题皮肤</span><small id="current-theme-label">桂花青玉</small></summary><div class="settings-accordion-body"><p class="theme-help">点选即切换，只改变这台设备的显示。</p><div class="theme-picker" role="group" aria-label="主题皮肤"><button class="theme-choice is-selected" type="button" data-theme-choice="jade" aria-pressed="true"><span class="theme-swatch jade" aria-hidden="true">✿</span><span class="theme-choice-copy"><strong class="theme-choice-title">桂花青玉 <em>默认</em></strong><small class="theme-choice-description">温润玉绿 · 桂花金</small></span><span class="theme-choice-check" aria-hidden="true">✓</span></button><button class="theme-choice" type="button" data-theme-choice="berry" aria-pressed="false"><span class="theme-swatch berry" aria-hidden="true">✿</span><span class="theme-choice-copy"><strong class="theme-choice-title">莓果红</strong><small class="theme-choice-description">温暖明快的红色</small></span><span class="theme-choice-check" aria-hidden="true">✓</span></button></div><p class="theme-footnote">皮肤保存在本机，不影响账目，也不包含在 JSON 备份中。</p></div></details>
         <details class="panel settings-accordion" id="partner-settings">
-          <summary><span>合伙人</span><small id="partner-settings-count">2 位 · 均等出资</small></summary>
+          <summary><span>合伙人</span><small id="partner-settings-count">2 位 · 均等补资</small></summary>
           <form id="partners-form" class="settings-accordion-body" novalidate>
-            <div class="partner-editor-heading"><h2>一起做生意的人</h2><small id="partner-draft-count">2 位 · 均等出资</small></div>
+            <div class="partner-editor-heading"><h2>一起做生意的人</h2><small id="partner-draft-count">2 位 · 均等补资</small></div>
             <div id="partner-editor"></div>
             <button class="outline-button add-partner" id="add-partner" type="button">＋ 添加合伙人</button>
-            <details class="field-tip"><summary>增减人数会怎样影响账本？</summary><p class="field-help">每人有独立的出资、垫付和代收记录。补钱建议按当前名单均等出资；新加入的人会从零出资开始，不会自动生成入金。已有流水（含作废）的成员可改称呼，不能移除，以保留历史归属。至少保留 1 人；称呼不要重复。这里只管理记账名单，不办理退伙结算或分红。</p></details>
+            <div class="share-editor">
+              <h3>补资目标比例</h3>
+              <p class="field-help">决定“建议再存”按什么比例分配，不改变经营盈亏，也不计算分红。</p>
+              <div class="share-mode" role="radiogroup" aria-label="补资目标比例"><label><input type="radio" name="shareMode" value="equal" checked>全员均分</label><label><input type="radio" name="shareMode" value="custom">自定义比例</label></div>
+              <div id="share-editor-fields" hidden><div id="share-editor-rows"></div><p id="share-total" class="field-help" role="status">合计 100%</p></div>
+            </div>
+            <details class="field-tip"><summary>增减人数会怎样影响账本？</summary><p class="field-help">每人有独立的出资、垫付和代收记录。新增成员从零出资开始，不会自动生成入金；人数变化时补资比例先恢复均分，可重新设定。已有流水（含作废）的成员可改称呼，不能移除，以保留历史归属。至少保留 1 人；称呼不要重复。这里只管理记账名单，不办理退伙结算或分红。</p></details>
             <button class="primary-button" type="submit">保存合伙人</button>
           </form>
         </details>
